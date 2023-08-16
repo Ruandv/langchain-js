@@ -13,7 +13,8 @@ try {
   const { run: runExample } = await import(`file://${modulePath}`);
   const ar = {
     root: __dirname,
-    question: args[0],
+    question: args[1],
+    loaderType: args[0]
   };
   runExample(ar);
 } catch (e) {

@@ -1,47 +1,72 @@
+import { RetrievalQAChain, loadQAStuffChain } from "langchain/chains";
+import { PDFLoader, TextLoader } from "langchain/document_loaders";
+import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import { PromptTemplate } from "langchain/prompts";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { HNSWLib } from "langchain/vectorstores/hnswlib";
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { OpenAIEmbeddings } from 'langchain/embeddings/openai';
-import { OpenAI } from "langchain/llms/openai"
-
-import { RetrievalQAChain } from 'langchain/chains';
-import { PDFLoader } from 'langchain/document_loaders/fs/pdf';
 import path from "path";
-import * as fs from 'fs';
+import Configurations from "./configurations.js";
+
+//loads data from text files 
 
 export const run = async (args: any) => {
-    var model = new OpenAI({ temperature: 0.1,
-        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION,
-        azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
-        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
-        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME, 
+  const config = new Configurations(args["root"]);
 
-         },);
-    const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
-    const documentPath = path.join(args["root"], '\\document_loaders\\example_data\\');
-    let documents = [] as string[];
-    await fs.readdir(path.join(args['root'], '\\document_loaders'), (x, f) => {
-        documents = f;
-    });
-    
-    var loader = new PDFLoader(path.join(documentPath, "RachelGreenCV.pdf"), { splitPages: true });
-    var docs = await loader.loadAndSplit(textSplitter);
-    
-    // Create a vector store from the documents.
-    const vectorStore = await HNSWLib.fromDocuments(docs, new OpenAIEmbeddings({
-        azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION,
-        azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
-        azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
-        azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME, 
+  const library = [{
+    fileType: 'txt', loader: new TextLoader(
+      path.join(config.documentPath, "txt", "state_of_the_union.txt")
+    )
+  },
+  { fileType: 'pdf', loader: new PDFLoader(path.join(config.documentPath, "pdf", "RachelGreenCV.pdf"), { splitPages: true }) }]
 
-        }));
-        
-    // Initialize a retriever wrapper around the vector store
-    const vectorStoreRetriever = vectorStore.asRetriever();
 
-    // Create a chain that uses the OpenAI LLM and HNSWLib vector store.
-    const chain = RetrievalQAChain.fromLLM(model, vectorStoreRetriever,{ verbose: true});
-    const res = await chain.call({
-        query: args["question"],
-    });
-    console.log({ res });
+  //https://js.langchain.com/docs/modules/chains/popular/vector_db_qa/
+  const promptTemplate = `Use the following pieces of context to answer the question at the end. 
+                            If you don't know the answer, just say that you don't know,and tel a bad dad joke.
+                            {context}
+                            Question: {question}
+                            Answer in Afrikaans:`;
+  const prompt = PromptTemplate.fromTemplate(promptTemplate);
+  
+  
+
+  const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
+
+  const loader = library.find(x => x.fileType === args["loaderType"])?.loader;
+  var docs = await loader!.loadAndSplit(textSplitter);
+
+  const embeddings = new OpenAIEmbeddings({
+    azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION,
+    azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
+    azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME,
+    azureOpenAIBasePath: process.env.AZURE_OPENAI_ENDPOINT,
+    azureOpenAIApiEmbeddingsDeploymentName: process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME,
+    verbose: config.verbosity
+  });
+  let vectorStore: HNSWLib;
+  try {
+    console.log("Trying to load vectorstore")
+    vectorStore = await HNSWLib.load(path.join(config.documentPath, "txt", 'vectors'), embeddings);
+  }
+  catch {
+    // // Create a vector store from the documents.
+    console.log("Creating vector store")
+    vectorStore = await HNSWLib.fromDocuments(docs, embeddings);
+    console.log("Saving vector store to file")
+    vectorStore.save(path.join(config.documentPath, "txt", 'vectors'))
+  }
+  console.log("Vectorstore loaded")
+
+  // Initialize a retriever wrapper around the vector store
+  const vectorStoreRetriever = vectorStore.asRetriever();
+
+  const chain = new RetrievalQAChain({
+    combineDocumentsChain: loadQAStuffChain(config.model, { prompt }),
+    retriever: vectorStoreRetriever,
+  });
+  const res = await chain.call({
+    query: args["question"],
+  });
+
+  console.log("DONE:", res["text"]);
 }

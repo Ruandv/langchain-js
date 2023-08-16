@@ -7,7 +7,9 @@
   "license": "MIT",
   "scripts": {
     "build": "tsc --declaration --outDir dist/",
-    "start": "tsx -r dotenv/config src/index.ts basic_call.ts",
+    "start:basic": "tsx -r dotenv/config src/index.ts basic_call.ts",
+    "start:pdfdocument": "tsx -r dotenv/config src/index.ts document_loaders/basic.ts pdf",
+    "start:txtdocument": "tsx -r dotenv/config src/index.ts document_loaders/basic.ts txt",
     "start:dist": "npm build && node -r dotenv/config dist/index.js",
     "lint": "eslint src",
     "lint:fix": "npm lint --fix"
