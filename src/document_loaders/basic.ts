@@ -1,5 +1,6 @@
 import { RetrievalQAChain, loadQAStuffChain } from "langchain/chains";
-import { PDFLoader, TextLoader } from "langchain/document_loaders";
+import { TextLoader } from "langchain/document_loaders/fs/text";
+import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 import { OpenAIEmbeddings } from "langchain/embeddings/openai";
 import { PromptTemplate } from "langchain/prompts";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -17,7 +18,11 @@ export const run = async (args: any) => {
       path.join(config.documentPath, "txt", "state_of_the_union.txt")
     )
   },
-  { fileType: 'pdf', loader: new PDFLoader(path.join(config.documentPath, "pdf", "RachelGreenCV.pdf"), { splitPages: true }) }]
+  {
+    fileType: 'pdf', loader: new PDFLoader(
+      path.join(config.documentPath, "pdf", "RachelGreenCV.pdf"), 
+      { splitPages: true })
+  }]
 
 
   //https://js.langchain.com/docs/modules/chains/popular/vector_db_qa/
@@ -27,8 +32,8 @@ export const run = async (args: any) => {
                             Question: {question}
                             Answer in Afrikaans:`;
   const prompt = PromptTemplate.fromTemplate(promptTemplate);
-  
-  
+
+
 
   const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
 
@@ -46,14 +51,14 @@ export const run = async (args: any) => {
   let vectorStore: HNSWLib;
   try {
     console.log("Trying to load vectorstore")
-    vectorStore = await HNSWLib.load(path.join(config.documentPath, "txt", 'vectors'), embeddings);
+    vectorStore = await HNSWLib.load(path.join(config.documentPath, args["loaderType"], 'vectors'), embeddings);
   }
   catch {
     // // Create a vector store from the documents.
     console.log("Creating vector store")
     vectorStore = await HNSWLib.fromDocuments(docs, embeddings);
     console.log("Saving vector store to file")
-    vectorStore.save(path.join(config.documentPath, "txt", 'vectors'))
+    vectorStore.save(path.join(config.documentPath, args["loaderType"], 'vectors'))
   }
   console.log("Vectorstore loaded")
 
